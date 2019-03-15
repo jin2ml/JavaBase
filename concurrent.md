@@ -24,6 +24,156 @@
 
 ## 1. 线程的实现
 
+**1. 继承`Thread`类创建线程**
+
+`Thread`类本质上是实现了`Runnable`接口的一个实例，代表一个线程的实例。启动线程的唯一方法就是通过`Thread`类的`start()`实例方法。`start()`方法是一个`native`方法，它将启动一个新线程，并执行`run()`方法。这种方式实现多线程很简单，通过自己的类直接继承`Thread`，并复写`run()`方法，就可以启动新线程并执行自己定义的`run()`方法。例如：
+
+```java
+public class MyThread extends Thread{
+
+    @Override
+    public void run(){
+        System.out.println("MyThread.run()");
+    }
+}
+
+Mythread thread1 = new MyThread();
+Mythread thread2 = new MyThread();
+thread1.start();
+thread2.start();
+```
+
+**2. 实现`Runnable`接口创建线程**
+
+如果自己的类已经继承了其他类，就无法继承`Thread`类了，这时可以实现一个Runnable接口，例如：
+
+```java
+public class MyThread extends OtherClass implements Runnable {
+
+    @Override
+    public void run(){
+        System.out.println("Mythread.run()");
+    }
+}
+```
+
+为了启动MyThread，首先要实例化一个Thread，并传入自己的实现了Runnable接口的Thread实例：
+
+```java
+MyThread myThread = new MyThread();
+Thread thread = new Thread(myThread);
+thread.start();
+```
+
+事实上，当传入一个Runnable target参数给Thread后，Thread的run()方法就会调用target.run()，参考JDK源码：
+
+```java
+public void run(){
+    if(target != null){
+        target.run();
+    }
+}
+```
+
+**3. 实现`Callable`接口通过`FutureTask`包装器来创建`Thread`线程**
+
+Callable接口只有一个方法，定义如下：
+
+```java
+public interface Callable<V> {
+    V call() throws Exception;
+}
+
+public class SomeCallable<V> extends OtherClass implements Callable<V> {
+    @Override
+    public V call() throws Exception {
+        return null;
+    }
+}
+
+Callable<Integer> callable = new SomeCallable<Integer>();
+//由Callable<Integer>创建一个FutureTask<Integer>对象：
+FutureTask<Integer> oneTask = new FutureTask<Integer>(callable);
+//FutureTask<Integer>是一个包装器，它通过接受Callable<Integer>来创建，它同时实现了Future和Runnable接口。
+//由FutureTask<Integer>创建一个Thread对象：
+Thread thread = new Thread(oneTask);
+thread.start();
+```
+
+**4.使用`ExecutorService`、`Callable`、`Future`实现有返回结果的进程**
+
+`ExecutorService`、`Callable`、`Future`三个接口实际上都是属于`Executor`框架。返回结果的线程是在`JDK1.5`中引入的新特征，有了这种特征就不需要再为了得到返回值而大飞周折了。而且自己实现了也有可能漏洞百出。
+
+可返回值的任务必须实现`Callable`接口。同样，无返回值的任务必须实现`Runnable`接口。
+
+执行`Callable`任务后，可以获取一个Future的对象，在该对象上调用`get`接可以获取到`Callable`任务返回的`Object`了。
+
+>注意，`get`方法是阻塞的，即：线程无返回结果，`get`方法会一直等待。
+
+再结合线程池接口`ExecutorServic`e就可以实现传说中有返回结果的多线程了。
+
+```java
+import java.util.concurrent.*;
+import java.util.Date;
+import java.util.List;
+import java.util.ArrayList;
+
+/**
+* 有返回值的线程
+*/  
+@SuppressWarnings("unchecked")
+public class Test {  
+    public static void main(String[] args) throws ExecutionException,  InterruptedException {
+
+    System.out.println("----程序开始运行----");  
+    Date date1 = new Date();  
+
+    int taskSize = 5;  
+    // 创建一个线程池  
+    ExecutorService pool = Executors.newFixedThreadPool(taskSize);  
+    // 创建多个有返回值的任务  
+    List<Future> list = new ArrayList<Future>();  
+    for (int i = 0; i < taskSize; i++) {  
+        Callable c = new MyCallable(i + " ");  
+        // 执行任务并获取Future对象  
+        Future f = pool.submit(c);  
+        // System.out.println(">>>" + f.get().toString());  
+        list.add(f);  
+    }  
+    // 关闭线程池  
+    pool.shutdown();  
+
+    // 获取所有并发任务的运行结果  
+    for (Future f : list) {  
+        // 从Future对象上获取任务的返回值，并输出到控制台  
+        System.out.println(">>>" + f.get().toString());  
+    }  
+
+    Date date2 = new Date();  
+    System.out.println("----程序结束运行----，程序运行时间【"  
+        + (date2.getTime() - date1.getTime()) + "毫秒】");  
+    }  
+}  
+  
+class MyCallable implements Callable<Object> {  
+    private String taskNum;  
+  
+    MyCallable(String taskNum) {  
+    this.taskNum = taskNum;  
+    }  
+  
+    public Object call() throws Exception {  
+        System.out.println(">>>" + taskNum + "任务启动");  
+        Date dateTmp1 = new Date();  
+        Thread.sleep(1000);  
+        Date dateTmp2 = new Date();  
+        long time = dateTmp2.getTime() - dateTmp1.getTime();  
+        System.out.println(">>>" + taskNum + "任务终止");  
+        return taskNum + "任务返回运行结果,当前任务时间【" + time + "毫秒】";  
+    }
+}
+```
+
 ## 2. 线程的状态
 
 ## 3. 优先级
