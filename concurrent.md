@@ -176,6 +176,8 @@ class MyCallable implements Callable<Object> {
 
 ## 2. 线程的状态
 
+![线程状态示意图](<https://images2015.cnblogs.com/blog/716271/201703/716271-20170320112245721-1831918220.jpg> '线程状态示意图')
+
 ## 3. 优先级
 
 ## 4. 线程调度
