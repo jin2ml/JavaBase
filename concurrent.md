@@ -270,6 +270,92 @@ Java使用的是哪种线程调度模式？此问题涉及到JVM的实现，JVM�
 
 5. 线程池中所有创建的线程，都会一直从缓存任务队列中取任务，取到任务马上执行
 
+```java
+public class MyThreadPool{
+    /**
+    * 初始化线程数
+    */
+    private int initThreadNumbers;
+    /**
+    * 工作线程数
+    */
+    private int workThreadNumbers;
+    /**
+    * 工作中线程
+    */
+    private ArrayList<Runnable> workThreads;
+    /**
+    * 暂存线程
+    */
+    private BlockingQueue<Runnable> tempStoredThreads;
+
+    private Lock mainLock = new ReentrantLock();
+
+    public MyThreadPool(int threads){
+        this.initThreadNumbers = threads;
+        this.workThreads = new ArrayList(threads)<>;
+        this.tempStoredThreads = new ArrayBlockingQueue(threads * 4)<>;
+        this.workThreadNumbers = 0;
+    }
+
+    public void execute(Runnable work){
+        try{
+            mainLock.lock();
+            if (workThreadNumbers < initThreadNumbers{
+                MyThread thread = new MyThread(work);
+                thread.start();
+                workThreads.add(thread);
+                workThreadNumbers++;
+            } else {
+                if(!tempStoredThreads.offer(work)){
+                    refuseWork();
+                }
+            }
+        } finally {
+            mainLock.unlock();
+        }
+    }
+
+    private void refuseWork(){
+        System.out.println("线程数量已经超出允许值！");
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        MyThreadPool threadPool = new MyThreadPool(5);
+        Runnable runnable = () -> {
+            System.out.println("do something");
+            System.out.println(Thread.currentThread().getName() + ":运行");
+        };
+        for (int i = 0; i < 50; i++) {
+            threadPool.execute(runnable);
+        }
+    }
+
+    class MyThread extends Thread {
+        private Runnable task;
+
+        public MyThread(Runnable runnable) {
+            this.task = runnable;
+        }
+
+        @Override
+        public void run(){
+            for(;;){
+                if(task != null){
+                    task.run();
+                    task = null;
+                } else {
+                    Runnable runnable = tempStoredThreads.poll();
+                    if(runnable != null){
+                        runnable.run();
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
 ## 2. submit()和execute()
 
 ## 3. 线程池原理
