@@ -320,17 +320,6 @@ public class MyThreadPool{
         System.out.println("线程数量已经超出允许值！");
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        MyThreadPool threadPool = new MyThreadPool(5);
-        Runnable runnable = () -> {
-            System.out.println("do something");
-            System.out.println(Thread.currentThread().getName() + ":运行");
-        };
-        for (int i = 0; i < 50; i++) {
-            threadPool.execute(runnable);
-        }
-    }
-
     class MyThread extends Thread {
         private Runnable task;
 
@@ -356,7 +345,69 @@ public class MyThreadPool{
 }
 ```
 
-## 2. submit()和execute()
+## 2. `submit()`和`execute()`
+
+1. 接收参数不一样，`submit()`有返回值
+
+```java
+void execute(Runnable runnable);
+Future<?> submit(Callable<T> task);
+Future<?> submit(Runnable task, T result);
+Future<?> submit(Runnable task);
+```
+
+2. 线程池`submit()`方法本质上还是调用`execute()`方法，所以在不需要返回值的情况下最好使用`execute()`方法。
+
+3. 线程池`submit()`方便`Exception`处理
+
+如果你再一个线程当中有异常，并且希望外部调用者感知到，那么可以使用`submit()`方法，通过捕获Future.get()抛出异常。
+
+```java
+public class RunnableTestMain {
+
+    public static void main(String[] args) {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+
+        /**
+         * execute(Runnable x) 没有返回值。可以执行任务，但无法判断任务是否成功完成。
+         */
+        pool.execute(new RunnableTest("Task1")); 
+
+        /**
+         * submit(Runnable x) 返回一个future。可以用这个future来判断任务是否成功完成。请看下面：
+         */
+        Future future = pool.submit(new RunnableTest("Task2"));
+
+        try {
+            if(future.get()==null){//如果Future's get返回null，任务完成
+                System.out.println("任务完成");
+            }
+        } catch (InterruptedException e) {
+        } catch (ExecutionException e) {
+            //否则我们可以看看任务失败的原因是什么
+            System.out.println(e.getCause().getMessage());
+        }
+
+    }
+
+}
+
+public class RunnableTest implements Runnable {
+
+    private String taskName;
+
+    public RunnableTest(final String taskName) {
+        this.taskName = taskName;
+    }
+
+    @Override
+    public void run() {
+        System.out.println("Inside "+taskName);
+        throw new RuntimeException("RuntimeException from inside " + taskName);
+    }
+
+}
+```
 
 ## 3. 线程池原理
 
