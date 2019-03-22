@@ -411,11 +411,273 @@ public class RunnableTest implements Runnable {
 
 ## 3. 线程池原理
 
+1. 线程池的优点
+
++ 线程是稀缺资源，使用线程池可以减少创建和销毁线程的次数，每个工作线程都可以重复使用。
+
++ 可以根据系统的承受能力，调整线程池中工作线程的数量，防止因为消耗过多内存导致服务器崩溃。
+
+2. 线程池的创建
+
+```java
+public ThreadPoolExecutor(int corePoolSize,
+                               int maximumPoolSize,
+                               long keepAliveTime,
+                               TimeUnit unit,
+                               BlockingQueue<Runnable> workQueue,
+                               RejectedExecutionHandler handler)
+
+```
+
+`corePoolSize`：线程池核心线程数量
+
+`maximumPoolSize`:线程池最大线程数量
+
+`keepAliverTime`：当活跃线程数大于核心线程数时，空闲的多余线程最大存活时间
+
+`unit`：存活时间的单位
+
+`workQueue`：存放任务的队列
+
+`handler`：超出线程范围和队列容量的任务的处理程序
+
+3. 线程池实现原理
+
++ 判断线程池里的`核心线程`是否都在执行任务，如果不是（核心线程空闲或者还有核心线程没有创建）则创建一个新的工作线程来执行任务，否则进入下一个流程。
+
++ 判断线程池工作队列是否已满，如果不是则将新提交的任务放入工作队列，否则进入下一个流程。
+
++ 判断线程池里的线程数量是否达到最大线程数，如果没有，则创建一个新的工作线程来执行任务。如果已经满了，则交给饱和策略来处理这个任务。
+
+4. RejectedExecutionHandler：饱和策略
+
+当队列和线程池都满了，说明线程池处于饱和状态，那么必须对新提交的任务采用一种特殊的策略来进行处理。这个策略默认配置是AbortPolicy，表示无法处理新的任务而抛出异常。JAVA提供了4种策略：
+
++ AbortPolicy：直接抛出异常
+
++ CallerRunsPolicy：只用调用所在的线程运行任务
+
++ DiscardOldestPolicy：丢弃队列里最近的一个任务，并执行当前任务。
+
++ DiscardPolicy：不处理，丢弃掉。
+
 ## 4. 为什么不允许使用Executors创建线程池
+
+原因如下：
+
+1. 阿里巴巴Java开发手册中明确指出，不允许使用Executors创建线程池：
+![不允许使用Executors创建线程池](<https://www.hollischuang.com/wp-content/uploads/2018/10/15406254121131.jpg> '不允许使用Executors创建线程池')
+
+原因如下：
+
++ java中`BlockingQueue`主要有两种实现，分别是`ArrayBlockingQueue`和`LinkedBlockingQueue`。`ArrayBlockingQueue`是用数组实现的有界阻塞队列，必须设置容量。而`LinkedBlockingQueue`是一个用链表实现的有界阻塞队列，容量可以选择进行设置，不设置的话，将是一个无边界的阻塞队列，最大长度为`Integer.MAX_VALUE`。
+
++ 查看new SingleExecutor时的源码可以发现，在创建LinkedBlockingQueue时，并未指定容量。此时，LinkedBlockingQueue就是一个无边界队列，对于一个无边界队列来说，是可以不断的向队列中加入任务的，这种情况下就有可能因为任务过多而导致内存溢出的问题。
+
+2. 创建线程池的正确方法
+
+避免使用`Executors`创建线程池，主要是避免使用其中的默认实现，那么我们可以自己直接调用`ThreadPoolExecutor`的构造函数自己创建线程池。在创建的同时，给`BlockQueue`指定容量就可以了。
+
+```java
+private static ExecutorService executor = new ThreadPoolExecutor(10, 10,
+    60L, TimeUnit.SECONDS,
+    new ArrayBlockingQueue(10));
+```
 
 # 四、 线程安全
 
 ## 1. 死锁
+
+死锁是指两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞的现象，`若无外力作用，它们都将无法推进下去。`此时称系统处于死锁状态或系统产生了死锁，这些永远在`互相等待`的进程称为死锁进程。
+
+进程在运行过程中，请求和释放资源的顺序不当，也同样会导致死锁。例如，并发进程 P1、P2分别保持了资源R1、R2，而进程P1申请资源R2，进程P2申请资源R1时，两者都会因为所需资源被占用而阻塞。
+
+Java中死锁最简单的情况是，一个线程T1持有锁L1并且申请获得锁L2，而另一个线程T2持有锁L2并且申请获得锁L1，因为默认的锁申请操作都是阻塞的，所以线程T1和T2永远被阻塞了。导致了死锁。这是最容易理解也是最简单的死锁的形式。但是实际环境中的死锁往往比这个复杂的多。可能会有多个线程形成了一个死锁的环路，比如：线程T1持有锁L1并且申请获得锁L2，而线程T2持有锁L2并且申请获得锁L3，而线程T3持有锁L3并且申请获得锁L1，这样导致了一个锁依赖的环路：T1依赖T2的锁L2，T2依赖T3的锁L3，而T3依赖T1的锁L1。从而导致了死锁。
+
+从上面两个例子中，我们可以得出结论，产生死锁可能性的最根本原因是：线程在获得一个锁L1的情况下再去申请另外一个锁L2，也就是锁L1想要包含了锁L2，也就是说在获得了锁L1，并且没有释放锁L1的情况下，又去申请获得锁L2，这个是产生死锁的最根本原因。另一个原因是默认的锁申请操作是阻塞的。
+
+死锁产生的必要条件
+
+1. 互斥条件：进程要求对所分配的资源（如打印机）进行排他性控制，即在一段时间内某资源仅为一个进程所占有。此时若有其他进程请求该资源，则请求进程只能等待。
+
+2. 不剥夺条件：进程所获得的资源在未使用完毕之前，不能被其他进程强行夺走，即只能由获得该资源的进程自己来释放（只能是主动释放)。
+
+3. 请求和保持条件：进程已经保持了至少一个资源，但又提出了新的资源请求，而该资源已被其他进程占有，此时请求进程被阻塞，但对自己已获得的资源保持不放。
+
+4. 循环等待条件：存在一种进程资源的循环等待链，链中每一个进程已获得的资源同时被链中下一个进程所请求。即存在一个处于等待状态的进程集合{Pl, P2, ..., pn}，其中Pi等 待的资源被P(i+1)占有（i=0, 1, ..., n-1)，Pn等待的资源被P0占有，如图1所示。
+
+![不允许使用Executors创建线程池](<https://images2017.cnblogs.com/blog/249993/201801/249993-20180119114001287-1936540249.jpg> '不允许使用Executors创建线程池')
+
+下面再来通俗的解释一下死锁发生时的条件：
+
+1. 互斥条件：一个资源每次只能被一个进程使用。独木桥每次只能通过一个人。
+
+2. 请求与保持条件：一个进程因请求资源而阻塞时，对已获得的资源保持不放。乙不退出桥面，甲也不退出桥面。
+
+3. 不剥夺条件: 进程已获得的资源，在未使用完之前，不能强行剥夺。甲不能强制乙退出桥面，乙也不能强制甲退出桥面。
+
+4. 循环等待条件：若干进程之间形成一种头尾相接的循环等待资源关系。如果乙不退出桥面，甲不能通过，甲不退出桥面，乙不能通过。
+
+死锁例子：
+
+```java
+package com.demo.test;
+
+/**
+ * 一个简单的死锁类
+ * t1先运行，这个时候flag==true,先锁定obj1,然后睡眠1秒钟
+ * 而t1在睡眠的时候，另一个线程t2启动，flag==false,先锁定obj2,然后也睡眠1秒钟
+ * t1睡眠结束后需要锁定obj2才能继续执行，而此时obj2已被t2锁定
+ * t2睡眠结束后需要锁定obj1才能继续执行，而此时obj1已被t1锁定
+ * t1、t2相互等待，都需要得到对方锁定的资源才能继续执行，从而死锁。 
+ */
+public class DeadLock implements Runnable{
+
+    private static Object obj1 = new Object();
+    private static Object obj2 = new Object();
+    private boolean flag;
+
+    public DeadLock(boolean flag){
+        this.flag = flag;
+    }
+
+    @Override
+    public void run(){
+        System.out.println(Thread.currentThread().getName() + "运行");
+
+        if(flag){
+            synchronized(obj1){
+                System.out.println(Thread.currentThread().getName() + "已经锁住obj1");
+                try {  
+                    Thread.sleep(1000);  
+                } catch (InterruptedException e) {  
+                    e.printStackTrace();  
+                }
+                synchronized(obj2){
+                    // 执行不到这里
+                    System.out.println("1秒钟后，"+Thread.currentThread().getName() + "锁住obj2");
+                }
+            }
+        }else{
+            synchronized(obj2){
+                System.out.println(Thread.currentThread().getName() + "已经锁住obj2");
+                try {  
+                    Thread.sleep(1000);  
+                } catch (InterruptedException e) {  
+                    e.printStackTrace();  
+                }
+                synchronized(obj1){
+                    // 执行不到这里
+                    System.out.println("1秒钟后，"+Thread.currentThread().getName() + "锁住obj1");
+                }
+            }
+        }
+    }
+}
+```
+
+```java
+package com.demo.test;
+
+public class DeadLockTest {
+
+     public static void main(String[] args) {
+         Thread t1 = new Thread(new DeadLock(true), "线程1");
+         Thread t2 = new Thread(new DeadLock(false), "线程2");
+
+         t1.start();
+         t2.start();
+    }
+}
+```
+
+运行结果：
+
+>线程1运行
+
+>线程1已经锁住obj1
+
+>线程2运行
+
+>线程2已经锁住obj2
+
+线程1锁住了obj1（甲占有桥的一部分资源），线程2锁住了obj2（乙占有桥的一部分资源），线程1企图锁住obj2（甲让乙退出桥面，乙不从），进入阻塞，线程2企图锁住obj1（乙让甲退出桥面，甲不从），进入阻塞，死锁了。
+
+从这个例子也可以反映出，死锁是因为多线程访问共享资源，由于访问的顺序不当所造成的，通常是一个线程锁定了一个资源A，而又想去锁定资源B；在另一个线程中，锁定了资源B，而又想去锁定资源A以完成自身的操作，两个线程都想得到对方的资源，而不愿释放自己的资源，造成两个线程都在等待，而无法执行的情况。
+
+如何避免死锁：
+
++ 加锁顺序（线程按照一定的顺序加锁）
+
+避免嵌套封锁：这是死锁最主要的原因的，如果你已经有一个资源了就要避免封锁另一个资源。如果你运行时只有一个对象封锁，那是几乎不可能出现一个死锁局面的。
+
+再举个生活中的例子，比如银行转账的场景下，我们必须同时获得两个账户上的锁，才能进行操作，两个锁的申请必须发生交叉。这时我们也可以打破死锁的那个闭环，在涉及到要同时申请两个锁的方法中，总是以相同的顺序来申请锁，比如总是先申请 id 大的账户上的锁 ，然后再申请 id 小的账户上的锁，这样就无法形成导致死锁的那个闭环。
+
+```java
+public class Account {
+    private int id;    // 主键
+    private String name;
+    private double balance;
+
+    public void transfer(Account from, Account to, double money){
+        if(from.getId() > to.getId()){
+            synchronized(from){
+                synchronized(to){
+                    // transfer
+                }
+            }
+        }else{
+            synchronized(to){
+                synchronized(from){
+                    // transfer
+                }
+            }
+        }
+    }
+
+    public int getId() {
+        return id;
+    }
+}
+```
+
+这样的话，即使发生了两个账户比如 id=1的和id=100的两个账户相互转账，因为不管是哪个线程先获得了id=100上的锁，另外一个线程都不会去获得id=1上的锁(因为他没有获得id=100上的锁)，只能是哪个线程先获得id=100上的锁，哪个线程就先进行转账。这里除了使用id之外，如果没有类似id这样的属性可以比较，那么也可以使用对象的hashCode()的值来进行比较。
+
+此例中只有先获取到大的id的锁才能继续去获取小的锁，所以不会出现未获取到大id的情况下就获取到小id的锁的情况。即获取锁的顺序是先大id后小id。
+
++ 加锁时限（线程尝试获取锁的时候加上一定的时限，超过时限则放弃对该锁的请求，并释放自己占有的锁）
+
+另外一个可以避免死锁的方法是在尝试获取锁的时候加一个超时时间，这也就意味着在尝试获取锁的过程中若超过了这个时限该线程则放弃对该锁请求。若一个线程没有在给定的时限内成功获得所有需要的锁，则会进行回退并释放所有已经获得的锁，然后等待一段随机的时间再重试。这段随机的等待时间让其它线程有机会尝试获取相同的这些锁，并且让该应用在没有获得锁的时候可以继续运行(加锁超时后可以先继续运行干点其它事情，再回头来重复之前加锁的逻辑)。
+
+需要注意的是，由于存在锁的超时，所以我们不能认为这种场景就一定是出现了死锁。也可能是因为获得了锁的线程（导致其它线程超时）需要很长的时间去完成它的任务。此外，如果有非常多的线程同一时间去竞争同一批资源，就算有超时和回退机制，还是可能会导致这些线程重复地尝试但却始终得不到锁。如果只有两个线程，并且重试的超时时间设定为0到500毫秒之间，这种现象可能不会发生，但是如果是10个或20个线程情况就不同了。因为这些线程等待相等的重试时间的概率就高的多（或者非常接近以至于会出现问题）。(超时和重试机制是为了避免在同一时间出现的竞争，但是当线程很多时，其中两个或多个线程的超时时间一样或者接近的可能性就会很大，因此就算出现竞争而导致超时后，由于超时时间一样，它们又会同时开始重试，导致新一轮的竞争，带来了新的问题。)
+
++ 死锁检测
+
+死锁检测是一个更好的死锁预防机制，它主要是针对那些不可能实现按序加锁并且锁超时也不可行的场景。
+
+每当一个线程获得了锁，会在线程和锁相关的数据结构中（map、graph等等）将其记下。除此之外，每当有线程请求锁，也需要记录在这个数据结构中。当一个线程请求锁失败时，这个线程可以遍历锁的关系图看看是否有死锁发生。例如，线程A请求锁7，但是锁7这个时候被线程B持有，这时线程A就可以检查一下线程B是否已经请求了线程A当前所持有的锁。如果线程B确实有这样的请求，那么就是发生了死锁（线程A拥有锁1，请求锁7；线程B拥有锁7，请求锁1）。
+
+当然，死锁一般要比两个线程互相持有对方的锁这种情况要复杂的多。线程A等待线程B，线程B等待线程C，线程C等待线程D，线程D又在等待线程A。线程A为了检测死锁，它需要递进地检测所有被B请求的锁。从线程B所请求的锁开始，线程A找到了线程C，然后又找到了线程D，发现线程D请求的锁被线程A自己持有着。这是它就知道发生了死锁。
+
+下面是一幅关于四个线程（A,B,C和D）之间锁占有和请求的关系图。像这样的数据结构就可以被用来检测死锁。
+
+![不允许使用Executors创建线程池](<https://images2017.cnblogs.com/blog/249993/201801/249993-20180119161940131-89848320.png> '不允许使用Executors创建线程池')
+
+那么当检测出死锁时，这些线程该做些什么呢？
+
+一个可行的做法是释放所有锁，回退，并且等待一段随机的时间后重试。这个和简单的加锁超时类似，不一样的是只有死锁已经发生了才回退，而不会是因为加锁的请求超时了。虽然有回退和等待，但是如果有大量的线程竞争同一批锁，它们还是会重复地死锁（原因同超时类似，不能从根本上减轻竞争）。
+
+一个更好的方案是给这些线程设置优先级，让一个（或几个）线程回退，剩下的线程就像没发生死锁一样继续保持着它们需要的锁。如果赋予这些线程的优先级是固定不变的，同一批线程总是会拥有更高的优先级。为避免这个问题，可以在死锁发生的时候设置随机的优先级。
+
+总结：避免死锁的方式
+
+1. 让程序每次至多只能获得一个锁。当然，在多线程环境下，这种情况通常并不现实。
+
+2. 设计时考虑清楚锁的顺序，尽量减少嵌在的加锁交互数量。
+
+3. 既然死锁的产生是两个线程无限等待对方持有的锁，那么只要等待时间有个上限不就好了。当然synchronized不具备这个功能，但是我们可以使用Lock类中的tryLock方法去尝试获取锁，这个方法可以指定一个超时时限，在等待超过该时限之后便会返回一个失败信息。
+
+我们可以使用ReentrantLock.tryLock()方法，在一个循环中，如果tryLock()返回失败，那么就释放以及获得的锁，并睡眠一小段时间。这样就打破了死锁的闭环。比如：线程T1持有锁L1并且申请获得锁L2，而线程T2持有锁L2并且申请获得锁L3，而线程T3持有锁L3并且申请获得锁L1。此时如果T3申请锁L1失败，那么T3释放锁L3，并进行睡眠，那么T2就可以获得L3了，然后T2执行完之后释放L2, L3，所以T1也可以获得L2了执行完然后释放锁L1, L2，然后T3睡眠醒来，也可以获得L1, L3了。打破了死锁的闭环。
 
 ## 2. 死锁如何排查
 
@@ -514,5 +776,87 @@ public class RunnableTest implements Runnable {
 ## 4. ThreadLocal
 
 ## 5. 写一个死锁的程序
+
+```java
+package com.demo.test;
+
+/**
+ * 一个简单的死锁类
+ * t1先运行，这个时候flag==true,先锁定obj1,然后睡眠1秒钟
+ * 而t1在睡眠的时候，另一个线程t2启动，flag==false,先锁定obj2,然后也睡眠1秒钟
+ * t1睡眠结束后需要锁定obj2才能继续执行，而此时obj2已被t2锁定
+ * t2睡眠结束后需要锁定obj1才能继续执行，而此时obj1已被t1锁定
+ * t1、t2相互等待，都需要得到对方锁定的资源才能继续执行，从而死锁。 
+ */
+public class DeadLock implements Runnable{
+
+    private static Object obj1 = new Object();
+    private static Object obj2 = new Object();
+    private boolean flag;
+
+    public DeadLock(boolean flag){
+        this.flag = flag;
+    }
+
+    @Override
+    public void run(){
+        System.out.println(Thread.currentThread().getName() + "运行");
+
+        if(flag){
+            synchronized(obj1){
+                System.out.println(Thread.currentThread().getName() + "已经锁住obj1");
+                try {  
+                    Thread.sleep(1000);  
+                } catch (InterruptedException e) {  
+                    e.printStackTrace();  
+                }
+                synchronized(obj2){
+                    // 执行不到这里
+                    System.out.println("1秒钟后，"+Thread.currentThread().getName() + "锁住obj2");
+                }
+            }
+        }else{
+            synchronized(obj2){
+                System.out.println(Thread.currentThread().getName() + "已经锁住obj2");
+                try {  
+                    Thread.sleep(1000);  
+                } catch (InterruptedException e) {  
+                    e.printStackTrace();  
+                }
+                synchronized(obj1){
+                    // 执行不到这里
+                    System.out.println("1秒钟后，"+Thread.currentThread().getName() + "锁住obj1");
+                }
+            }
+        }
+    }
+}
+```
+
+```java
+package com.demo.test;
+
+public class DeadLockTest {
+
+     public static void main(String[] args) {
+         Thread t1 = new Thread(new DeadLock(true), "线程1");
+         Thread t2 = new Thread(new DeadLock(false), "线程2");
+
+         t1.start();
+         t2.start();
+    }
+}
+```
+
+运行结果：
+
+线程1运行
+
+线程1已经锁住obj1
+
+线程2运行
+
+线程2已经锁住obj2
+
 
 ## 6. 写代码解决生产者消费者问题
