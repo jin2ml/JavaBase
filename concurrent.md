@@ -681,7 +681,33 @@ public class Account {
 
 ## 2. 死锁如何排查
 
-## 3. 线程安全和内存模型的关系
+1. jps -l
+
+2. jstack -l id
+
+found one Java-level deadlock
+
+3. 使用jconsole，找到线程栏
+
+4. jvisualvm
+
+## 3. Java CPU 100% 排查
+
+1. 使用top命令查看CPU占用资源较高的PID
+
+2. 通过jps找到当前用户下的java程序PID
+
+3. 使用 pidstat -p 1 3 -u -t
+
+4. 找到CPU占用较高的线程TID
+
+5. 将TID转化为16进制的表示方式
+
+6. jstack -l输出当前进程的线程信息
+
+7. 查找TID对应的线程（输出的线程ID为16进制）。找到对应代码。
+
+## 4. 线程安全和内存模型的关系
 
 # 五、 锁
 
