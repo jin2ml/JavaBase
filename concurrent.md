@@ -795,6 +795,14 @@ found one Java-level deadlock
 
 ## 1. sleep和wait
 
+sleep是Thread的方法，wait是Object的方法。
+
+sleep不会释放锁，wait会释放锁
+
+sleep()方法导致了程序暂停执行指定的时间，但是他的监控状态依然保持者，当指定的时间到了又会自动恢复运行状态。在调用sleep()方法的过程中，线程不会释放对象锁。而且sleep()只能自己到点了醒来，不能被唤醒。
+
+wait()方法的时候，线程会放弃对象锁，进入等待此对象的等待锁定池，只有针对此对象调用notify()方法后本线程才进入对象锁定池，准备获取对象锁进入运行状态。
+
 ## 2. wait和notify
 
 ## 3. notify和notifyAll
